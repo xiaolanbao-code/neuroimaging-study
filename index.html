@@ -19,11 +19,15 @@
     canvas { display: block; width: 100%; height: 100%; }
 
     /* 关键：针对屏幕宽度小于 600px 的手机端进行适配 */
-    @media (max-width: 600px) {
-        body { padding: 5px; }
-        .container { padding: 10px; }
-        #canvas-container { height: 85vh; } /* 手机端调高显示区域 */
-        h2 { font-size: 1rem; }
+@media (max-width: 600px) {
+        #info-panel { 
+            top: auto; 
+            bottom: 20px; /* 手机端挪到下面，防止挡住顶部图像 */
+            left: 5%;
+            right: 5%;
+            max-width: 90%;
+            font-size: 14px;
+        }
     }
 </style>
 </head>
@@ -101,13 +105,16 @@
         }
     }
 
-    // 4. 初始化 NiiVue 引擎 (保留您的高清和拖拽配置)
+// 4. 初始化引擎
     const nv = new Niivue({
         onLocationChange: handleLocationChange, 
         crosshairColor: [1, 0, 0, 1],
-        isHighResolutionCapable: true,  
-        backColor: [0, 0, 0, 1],        
-        dragMode: 1                     
+        isHighResolutionCapable: true,
+        backColor: [0, 0, 0, 1],
+        dragMode: 1,
+        // 新增：让手机端点击时也能像电脑移动鼠标一样灵敏
+        isColorbar: false,
+        isOrientCube: true
     });
     nv.attachTo('gl'); 
     
@@ -115,16 +122,18 @@
     function adjustLayout() {
         const isMobile = window.innerWidth < 600;
         if (isMobile) {
-            // 手机端：强制纵向排列 (1列多行)
+            // 手机端：1 纵向堆叠排列
             nv.opts.multiplanarLayout = 1; 
         } else {
-            // 电脑端：采用自动网格模式
+            // 电脑端：0 自动网格模式
             nv.opts.multiplanarLayout = 0; 
         }
-        nv.draw(); // 立即重绘以应用新布局
+        // 核心修复：使用新版 NiiVue 的刷新函数
+        if (typeof nv.updateGLView === 'function') {
+            nv.updateGLView();
+        }
     }
 
-    // 页面加载和窗口大小改变时都触发一次
     window.addEventListener('resize', adjustLayout);
     adjustLayout();
     // 5. 按顺序加载三层数据结构
