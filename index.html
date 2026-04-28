@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>高精度神经解剖与白质双源交互图谱</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; margin-bottom: 20px; }
+        
+        /* 新增：图谱切换控制区样式 */
+        .controls { text-align: center; margin-bottom: 15px; background: #eef2f5; padding: 10px; border-radius: 6px; }
+        .controls label { margin: 0 15px; cursor: pointer; font-weight: bold; color: #333; font-size: 15px; }
+        .controls input[type="checkbox"] { transform: scale(1.2); margin-right: 5px; }
+
+        #canvas-container { position: relative; width: 100%; height: 500px; background-color: #000; border-radius: 4px; overflow: hidden; }
+        
+        /* 信息面板调整：支持显示多行数据 */
+        #info-panel { position: absolute; top: 20px; left: 20px; background: rgba(0, 0, 0, 0.7); color: #fff; padding: 12px 18px; border-radius: 6px; font-size: 16px; font-weight: bold; pointer-events: none; line-height: 1.5; border-left: 4px solid #00ffcc; }
+        
+        canvas { display: block; outline: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>互动式神经影像学联合图谱 (AAL3 + JHU)</h2>
+    
+    <div class="controls">
+        <label>
+            <input type="checkbox" id="showAAL" checked> 显示 AAL3 (宏观脑区/灰质)
+        </label>
+        <label>
+            <input type="checkbox" id="showJHU"> 显示 JHU (白质纤维束)
+        </label>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="gl" style="width: 100%; height: 100%; display: block; outline: none;"></canvas>
+        <div id="info-panel">请将鼠标悬停或点击影像区域...</div>
+    </div>
+</div>
+
+<script type="module">
+    // 保留您测试成功的 jsDelivr 稳定节点
+    import { Niivue } from "https://cdn.jsdelivr.net/npm/@niivue/niivue/dist/niivue.es.js"
+
+    // 1. 初始化双字典对象
+    let aalLabels = {};
+    let jhuLabels = {};
+
+// 2. 独立加载字典（加入容错机制，互不影响）
+    fetch('aal3_labels.json')
+        .then(res => res.json())
+        .then(data => {
+            data.forEach(item => aalLabels[item.id] = item.name);
+            console.log("AAL字典加载成功，共", data.length, "个脑区");
+        }).catch(err => console.warn("AAL字典未找到或格式错误"));
+
+    fetch('jhu_labels.json')
+        .then(res => res.json())
+        .then(data => {
+            data.forEach(item => jhuLabels[item.id] = item.name);
+            console.log("JHU字典加载成功，共", data.length, "个白质束");
+        }).catch(err => console.warn("JHU字典未找到或格式错误"));
+
+    // 3. 核心查询逻辑：同时穿透查询多层数据
+    function handleLocationChange(data) {
+        // data.values 是一个数组：[0]是底图, [1]是AAL, [2]是JHU
+        if (data.values && data.values.length > 0) {
+            let msgHTML = "";
+            
+            // 查询 AAL3 图层 (索引为 1)
+            if (data.values.length > 1 && data.values[1].value > 0) {
+                let idAAL = Math.round(data.values[1].value);
+                if(aalLabels[idAAL]) {
+                    msgHTML += `<span style="color: #00ffcc;">[解剖] ${aalLabels[idAAL]}</span><br>`;
+                }
+            }
+            
+            // 查询 JHU 图层 (索引为 2)
+            if (data.values.length > 2 && data.values[2].value > 0) {
+                let idJHU = Math.round(data.values[2].value);
+                if(jhuLabels[idJHU]) {
+                    msgHTML += `<span style="color: #ffaa00;">[白质] ${jhuLabels[idJHU]}</span>`;
+                }
+            }
+            
+            let panel = document.getElementById('info-panel');
+            if (msgHTML !== "") {
+                panel.innerHTML = msgHTML;
+            } else {
+                panel.innerHTML = "<span style='color: #aaaaaa;'>背景或未定义区域</span>";
+            }
+        }
+    }
+
+    // 4. 初始化 NiiVue 引擎 (保留您的高清和拖拽配置)
+    const nv = new Niivue({
+        onLocationChange: handleLocationChange, 
+        crosshairColor: [1, 0, 0, 1],
+        isHighResolutionCapable: true,  
+        backColor: [0, 0, 0, 1],        
+        dragMode: 1                     
+    });
+    nv.attachTo('gl'); 
+
+    // 5. 按顺序加载三层数据结构
+    var volumeList = [
+        {
+            url: "MNI152_T1_1mm_brain.nii.gz", // Index 0: 视觉底图
+            colormap: "gray",
+            cal_min: 2000,   
+            cal_max: 8000    
+        },
+        {
+            url: "AAL3v1.nii.gz",             // Index 1: AAL 图谱 (默认开启)
+            colormap: "random",                
+            opacity: 0.35                      
+        },
+        {
+            url: "JHU-ICBM-labels-1mm.nii.gz",// Index 2: JHU 白质图谱 (默认隐藏透明度为0)
+            colormap: "warm",                 // 使用暖色系，与 AAL 区分开
+            opacity: 0.0                      
+        }
+    ];
+    
+    // 6. 执行加载并绑定上方复选框的 UI 交互事件
+    nv.loadVolumes(volumeList).then(() => {
+        // 控制 AAL 图层的透明度
+        document.getElementById('showAAL').addEventListener('change', (e) => {
+            nv.setOpacity(1, e.target.checked ? 0.35 : 0.0);
+        });
+        
+        // 控制 JHU 图层的透明度
+        document.getElementById('showJHU').addEventListener('change', (e) => {
+            nv.setOpacity(2, e.target.checked ? 0.5 : 0.0);
+        });
+    });
+</script>
+
+</body>
+</html>
